@@ -48,6 +48,7 @@
 
     // Array to hold planet meshes for raycasting
     const planetMeshes = [];
+    const asteroids = [];
 
     // Planet class to create and manage celestial bodies
     class Planet {
@@ -87,6 +88,33 @@
       }
     }
 
+    // Asteroid class for creating space rocks
+    class Asteroid {
+        constructor() {
+            const geometry = new THREE.DodecahedronGeometry(Math.random() * 2, 0);
+            const material = new THREE.MeshStandardMaterial({ color: 0x888888 });
+            this.mesh = new THREE.Mesh(geometry, material);
+
+            this.orbitRadius = 180 + Math.random() * 40;
+            this.speed = (Math.random() - 0.5) * 0.02;
+            this.theta = Math.random() * Math.PI * 2;
+            this.yOffset = (Math.random() - 0.5) * 10;
+
+            scene.add(this.mesh);
+        }
+
+        update(deltaTime) {
+            this.theta += this.speed * deltaTime * 0.01;
+            if (this.theta > Math.PI * 2) this.theta -= Math.PI * 2;
+
+            this.mesh.position.x = this.orbitRadius * Math.cos(this.theta);
+            this.mesh.position.z = this.orbitRadius * Math.sin(this.theta);
+            this.mesh.position.y = this.yOffset;
+            this.mesh.rotation.x += 0.01;
+            this.mesh.rotation.y += 0.01;
+        }
+    }
+
     // Create all the planets in the solar system
     const sun = new Planet('Sun', 0, 20, 'yellow', 0);
     const mercury = new Planet('Mercury', 50, 5, 'gray', 0.2);
@@ -99,25 +127,29 @@
     const neptune = new Planet('Neptune', 380, 11, 'blueviolet', 0.015);
 
     const planets = [sun, mercury, venus, earth, mars, jupiter, saturn, uranus, neptune];
-   
+
+    // Create the asteroid belt
+    for (let i = 0; i < 500; i++) {
+        asteroids.push(new Asteroid());
+    }
+
     // Set up post-processing for visual effects
     const composer = new THREE.EffectComposer(renderer);
     const renderPass = new THREE.RenderPass(scene, camera);
     composer.addPass(renderPass);
-//  if(this.name != "Sun"){
+
     // Afterimage pass for a ghosting effect
     const afterimagePass = new THREE.AfterimagePass();
     afterimagePass.uniforms.damp.value = 0.85;
     composer.addPass(afterimagePass);
 
+    // Bloom pass for a glowing effect on bright objects
+    const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+    bloomPass.threshold = 0;
+    bloomPass.strength = 1.5;
+    bloomPass.radius = 0;
+    composer.addPass(bloomPass);
 
-      // Bloom pass for a glowing effect on bright objects
-      const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-      bloomPass.threshold = 0;
-      bloomPass.strength = 1.5;
-      bloomPass.radius = 0;
-      composer.addPass(bloomPass);
-    // }
     // Raycaster for detecting mouse-over events
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -142,8 +174,9 @@
       const deltaTime = time - lastTime;
       lastTime = time;
 
-      // Update all planets
+      // Update all planets and asteroids
       planets.forEach(planet => planet.update(deltaTime));
+      asteroids.forEach(asteroid => asteroid.update(deltaTime));
 
       // Check for intersections with planets
       raycaster.setFromCamera(mouse, camera);
