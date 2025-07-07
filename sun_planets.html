@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>3D Solar System Simulation</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    canvas { display: block; }
+    #tooltip {
+      position: absolute;
+      display: none;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-family: sans-serif;
+      pointer-events: none; /* So it doesn't interfere with raycasting */
+    }
+  </style>
+</head>
+<body>
+  <div id="tooltip"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/AfterimagePass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/AfterimageShader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+  <script>
+    // Basic setup for the scene, camera, and renderer
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Add orbit controls to allow camera manipulation
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    camera.position.set(0, 150, 400);
+    controls.update();
+
+    // Add ambient light to softly illuminate the scene
+    scene.add(new THREE.AmbientLight(0x404040, 0.5));
+
+    // Array to hold planet meshes for raycasting
+    const planetMeshes = [];
+
+    // Planet class to create and manage celestial bodies
+    class Planet {
+      constructor(name, orbitRadius, baseRadius, color, speed) {
+        this.name = name;
+        this.orbitRadius = orbitRadius;
+        this.baseRadius = baseRadius;
+        this.color = color;
+        this.speed = speed;
+        this.theta = Math.random() * Math.PI * 2; // Random starting angle
+
+        const geometry = new THREE.SphereGeometry(this.baseRadius, 32, 32);
+        let material;
+        if (name === 'Sun') {
+          // The sun emits light, so it uses a basic material
+          material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+          const pointLight = new THREE.PointLight(0xffffff, 1.5, 2000);
+          this.mesh = new THREE.Mesh(geometry, material);
+          this.mesh.add(pointLight);
+        } else {
+          // Planets are lit by the sun, so they use a standard material
+          material = new THREE.MeshStandardMaterial({ color: this.color });
+          this.mesh = new THREE.Mesh(geometry, material);
+        }
+        this.mesh.userData.name = name; // Store planet name for tooltip
+        scene.add(this.mesh);
+        planetMeshes.push(this.mesh);
+      }
+
+      // Update planet's position in its orbit
+      update(deltaTime) {
+        this.theta += this.speed * deltaTime * 0.01;
+        if (this.theta > Math.PI * 2) this.theta -= Math.PI * 2;
+
+        this.mesh.position.x = this.orbitRadius * Math.cos(this.theta);
+        this.mesh.position.z = this.orbitRadius * Math.sin(this.theta); // Orbit in the XZ plane
+      }
+    }
+
+    // Create all the planets in the solar system
+    const sun = new Planet('Sun', 0, 20, 'yellow', 0);
+    const mercury = new Planet('Mercury', 50, 5, 'gray', 0.2);
+    const venus = new Planet('Venus', 80, 8, 'orange', 0.15);
+    const earth = new Planet('Earth', 120, 10, 'blue', 0.1);
+    const mars = new Planet('Mars', 160, 7, 'red', 0.08);
+    const jupiter = new Planet('Jupiter', 220, 15, 'tan', 0.05);
+    const saturn = new Planet('Saturn', 280, 13, 'goldenrod', 0.03);
+    const uranus = new Planet('Uranus', 330, 11, 'lightblue', 0.02);
+    const neptune = new Planet('Neptune', 380, 11, 'blueviolet', 0.015);
+
+    const planets = [sun, mercury, venus, earth, mars, jupiter, saturn, uranus, neptune];
+   
+    // Set up post-processing for visual effects
+    const composer = new THREE.EffectComposer(renderer);
+    const renderPass = new THREE.RenderPass(scene, camera);
+    composer.addPass(renderPass);
+//  if(this.name != "Sun"){
+    // Afterimage pass for a ghosting effect
+    const afterimagePass = new THREE.AfterimagePass();
+    afterimagePass.uniforms.damp.value = 0.85;
+    composer.addPass(afterimagePass);
+
+
+      // Bloom pass for a glowing effect on bright objects
+      const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+      bloomPass.threshold = 0;
+      bloomPass.strength = 1.5;
+      bloomPass.radius = 0;
+      composer.addPass(bloomPass);
+    // }
+    // Raycaster for detecting mouse-over events
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const tooltip = document.getElementById('tooltip');
+
+    // Update mouse coordinates on mouse move
+    function onMouseMove(event) {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+      tooltip.style.left = event.clientX + 15 + 'px';
+      tooltip.style.top = event.clientY + 15 + 'px';
+    }
+
+    window.addEventListener('mousemove', onMouseMove, false);
+
+    let lastTime = 0;
+
+    // Animation loop
+    function animate(time) {
+      if (!lastTime) lastTime = time;
+      const deltaTime = time - lastTime;
+      lastTime = time;
+
+      // Update all planets
+      planets.forEach(planet => planet.update(deltaTime));
+
+      // Check for intersections with planets
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(planetMeshes);
+
+      if (intersects.length > 0) {
+        tooltip.style.display = 'block';
+        tooltip.textContent = intersects[0].object.userData.name;
+      } else {
+        tooltip.style.display = 'none';
+      }
+
+      // Update controls and render the scene
+      controls.update();
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+
+    animate(0);
+
+    // Handle window resizing
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+      bloomPass.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
